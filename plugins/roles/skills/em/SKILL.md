@@ -62,7 +62,7 @@ EM định nghĩa step (từ Plan)
 - **Fix bug-class → audit sibling:** khi step là fix bug, TRƯỚC khi đóng phải grep cùng pattern toàn module → liệt kê mọi sibling (handler open/close/modify, path REST/WS, helper, test) → đánh dấu từng cái *fix / skip + lý do*. Không chắc class hay site-specific → mặc định **class** (grep rẻ, sót sibling = vỡ prod). EM verify audit đã thực sự làm.
 
 ## 7. Prompt cho subagent
-- **Coder (TỰ-ĐỦ, 6 phần):** branch+git rule · scope · out-of-scope · acceptance criteria · edge cases · selfcheck path + "commit KHÔNG merge".
+- **Coder (TỰ-ĐỦ, 6 phần):** branch+git rule · scope · out-of-scope · acceptance criteria · edge cases · selfcheck path + "commit KHÔNG merge". *(Step fix bug → bắt buộc thêm yêu cầu **sibling audit** §6 + section `## Sibling audit` trong selfcheck.)*
 - **Reviewer (độc lập, đối kháng):** subagent KHÁC Coder; đọc code thật + selfcheck + **chạy test** + verify claim "pre-existing" → verdict + phản biện; **KHÔNG sửa code, KHÔNG git-mutate** (xem §4).
 
 ## 8. Selfcheck + escalation
