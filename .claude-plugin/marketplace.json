@@ -1,0 +1,17 @@
+{
+  "name": "dung-tools",
+  "owner": {
+    "name": "Dung",
+    "email": "matran19900@gmail.com"
+  },
+  "description": "Dung's reusable Claude Code extensions — project-agnostic workflow roles, shared across projects & machines.",
+  "plugins": [
+    {
+      "name": "roles",
+      "source": "./plugins/roles",
+      "description": "Generic CTO (advisor: research → self-sufficient Plan → independent review) and EM (executor: Plan → Coder/Reviewer loop → branch-per-step) role skills. Project-agnostic; project specifics live in each repo's PROJECT_CONTEXT / PROJECT_STATE.",
+      "version": "0.1.0",
+      "keywords": ["workflow", "cto", "em", "roles", "review", "executor"]
+    }
+  ]
+}
