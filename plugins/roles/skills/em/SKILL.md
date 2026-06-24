@@ -12,7 +12,8 @@ disable-model-invocation: true
 
 ## 0. Đọc TRƯỚC khi chạy (mỗi phiên)
 1. `docs/PROJECT_STATE.md` (hoặc tương đương) — snapshot + job đang chạy. **MANDATORY.**
-2. **Plan của job** (user chỉ) — spec + danh sách step + invariants/landmines + decisions. **Đây là hợp đồng — làm đúng, không lệch.**
+2. **Plan của job** (user chỉ) — spec + danh sách step + invariants/landmines + decisions. **Đây là hợp đồng — làm đúng, không lệch.** Landmine "verify X" = tiền đề chưa chứng minh → grep X ngay (§6).
+
 3. `docs/workflow/PROJECT_CONTEXT.md` (hoặc CLAUDE.md) — lệnh test/build thật, **test baseline (số fail pre-existing)**, prefix branch, đặc thù git/deploy.
 Thiếu thông tin để chạy (lệnh test, baseline, branch convention) → hỏi user trước, đừng đoán.
 
@@ -60,7 +61,7 @@ EM định nghĩa step (từ Plan)
 - Subagent đôi khi confabulate (đặc biệt *"fail này pre-existing"*) → tự so với baseline trong PROJECT_CONTEXT, đếm **0 new failure**.
 - Component không build/test được trong môi trường (vd cần OS khác) → verify bằng **đọc code** + đánh dấu cần user confirm.
 - **Fix bug-class → audit sibling:** khi step là fix bug, TRƯỚC khi đóng phải grep cùng pattern toàn module → liệt kê mọi sibling (handler open/close/modify, path REST/WS, helper, test) → đánh dấu từng cái *fix / skip + lý do*. Không chắc class hay site-specific → mặc định **class** (grep rẻ, sót sibling = vỡ prod). EM verify audit đã thực sự làm.
-- **Landmine kiểu "verify X" = tiền đề chưa chứng minh → grep X ngay (xem §6).**
+- **Probe "verify X" landmine lúc GROUND (trước Coder):** Plan ghi landmine kiểu *"verify X được wire/subscribe/derive đúng"* = **tiền đề Plan CHƯA chứng minh** → grep cơ chế X **ngay ở ground step, TRƯỚC khi spawn Coder**, đừng để tới sau merge mới lộ. Phân loại X: **code-mechanism** (greppable — "X có derive/wire đúng không?") → grep ngay; **runtime/ops state** (chỉ biết trên live, vd "USDJPY có trong `symbols:active`?") → không grep được, đánh dấu **cần user smoke**. Nếu grep thấy **tiền đề SAI** → **escalate quyết định scope cho user** (đưa phương án A/B/C), **KHÔNG tự mở scope**.
 
 ## 7. Prompt cho subagent
 - **Coder (TỰ-ĐỦ, 6 phần):** branch+git rule · scope · out-of-scope · acceptance criteria · edge cases · selfcheck path + "commit KHÔNG merge". *(Step fix bug → bắt buộc thêm yêu cầu **sibling audit** §6 + section `## Sibling audit` trong selfcheck.)*
