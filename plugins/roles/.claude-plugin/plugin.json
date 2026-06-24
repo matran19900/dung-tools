@@ -1,7 +1,7 @@
 {
   "name": "roles",
   "description": "Generic CTO + EM workflow roles (project-agnostic). Invoke /roles:cto (advisor) or /roles:em (executor). Project specifics stay in each repo's PROJECT_CONTEXT / PROJECT_STATE.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Dung",
     "email": "matran19900@gmail.com"

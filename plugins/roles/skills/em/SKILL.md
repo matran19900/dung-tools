@@ -60,6 +60,7 @@ EM định nghĩa step (từ Plan)
 - Subagent đôi khi confabulate (đặc biệt *"fail này pre-existing"*) → tự so với baseline trong PROJECT_CONTEXT, đếm **0 new failure**.
 - Component không build/test được trong môi trường (vd cần OS khác) → verify bằng **đọc code** + đánh dấu cần user confirm.
 - **Fix bug-class → audit sibling:** khi step là fix bug, TRƯỚC khi đóng phải grep cùng pattern toàn module → liệt kê mọi sibling (handler open/close/modify, path REST/WS, helper, test) → đánh dấu từng cái *fix / skip + lý do*. Không chắc class hay site-specific → mặc định **class** (grep rẻ, sót sibling = vỡ prod). EM verify audit đã thực sự làm.
+- **Landmine kiểu "verify X" = tiền đề chưa chứng minh → grep X ngay (xem §6).**
 
 ## 7. Prompt cho subagent
 - **Coder (TỰ-ĐỦ, 6 phần):** branch+git rule · scope · out-of-scope · acceptance criteria · edge cases · selfcheck path + "commit KHÔNG merge". *(Step fix bug → bắt buộc thêm yêu cầu **sibling audit** §6 + section `## Sibling audit` trong selfcheck.)*
