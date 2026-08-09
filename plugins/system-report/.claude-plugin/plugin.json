@@ -1,0 +1,10 @@
+{
+  "name": "system-report",
+  "description": "Automated daily system health report (project-agnostic). /system-report:init scaffolds config + tooling into any repo; /system-report:run collects multi-instance logs, runs a READ-ONLY AI triage, and delivers a severity-ranked digest (webhook + dated file). /system-report:status shows readiness.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Dung",
+    "email": "matran19900@gmail.com"
+  },
+  "keywords": ["ops", "monitoring", "health-report", "triage", "cron", "observability"]
+}

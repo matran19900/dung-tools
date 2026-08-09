@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# system-report — báo cáo sức khoẻ hằng ngày cho {{PROJECT}}
+# Cài: crontab -e  → dán khối dưới (đã thay {{...}} bằng đường dẫn thật).
+#
+# ⚠️ cron KHÔNG có PATH/env của shell đăng nhập:
+#   · dùng ĐƯỜNG DẪN TUYỆT ĐỐI cho run.sh
+#   · nạp secret qua file env (chmod 600, KHÔNG commit) — xem dòng `set -a` bên dưới
+#   · claude CLI: đặt claude_bin trong config.yml nếu không nằm trong PATH dưới đây
+# ─────────────────────────────────────────────────────────────────────────────
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# phút giờ ngày tháng thứ   lệnh
+{{CRON}} set -a; . {{REPO_ROOT}}/ops/system-report/.env; set +a; \
+  {{REPO_ROOT}}/ops/system-report/run.sh >> /var/log/system-report.log 2>&1
+
+# ── .env mẫu (tạo tay, chmod 600, thêm vào .gitignore) ───────────────────────
+#   REPORT_REDIS_PASS=...
+#   REPORT_WEBHOOK_URL=https://...
+#   (KHÔNG đặt REPORT_ENABLED ở đây — đó là env của các instance chạy Reporter,
+#    không phải của runner.)
+#
+# ── Kiểm tra ─────────────────────────────────────────────────────────────────
+#   {{REPO_ROOT}}/ops/system-report/run.sh --check      # prereq + config
+#   {{REPO_ROOT}}/ops/system-report/run.sh --dry-run    # gom log, không gọi AI
+#   {{REPO_ROOT}}/ops/system-report/run.sh --status     # ai đang sống/chết
+#   crontab -l | grep system-report                     # đã cài chưa
+#
+# ── Giám sát chính cái cron này ──────────────────────────────────────────────
+# Im lặng = HỎNG (guardrail heartbeat §3.4-6). Nếu 1 ngày không thấy digest:
+#   tail -n 50 /var/log/system-report.log
+#   cat {{REPO_ROOT}}/ops/system-report/.last-run

@@ -9,16 +9,24 @@ dung-tools/                              ← marketplace repo (push this to GitH
 ├── .claude-plugin/
 │   └── marketplace.json                 ← marketplace manifest (name + plugins[])
 └── plugins/
-    └── roles/                           ← plugin "roles" (one install unit)
+    ├── roles/                           ← plugin "roles" (one install unit)
+    │   ├── .claude-plugin/plugin.json
+    │   └── skills/
+    │       ├── cto/SKILL.md             → invoked as /roles:cto
+    │       └── em/SKILL.md              → invoked as /roles:em
+    └── system-report/                   ← plugin "system-report"
         ├── .claude-plugin/plugin.json
-        └── skills/
-            ├── cto/SKILL.md             → invoked as /roles:cto
-            └── em/SKILL.md              → invoked as /roles:em
+        ├── commands/                    → /system-report:init | :run | :status
+        └── skills/system-report/
+            ├── SKILL.md                 ← framework (mechanism only)
+            ├── templates/               ← config, runner, triage prompt, reporters (C#/Py/TS/Go)
+            └── reference/ARCHITECTURE.md
 ```
 
 - **`/roles:cto`** — CTO advisor: research → self-sufficient Plan → independent review. Read-only while EM runs.
 - **`/roles:em`** — EM executor: receive Plan → Coder/Reviewer loop → branch-per-step → verify → merge.
-- Both are **project-agnostic**. Project specifics (core goals, invariants, stack, test baselines, deploy, git quirks) stay in each repo's `docs/PROJECT_STATE.md` + `docs/workflow/PROJECT_CONTEXT.md`; the skills' §0 tells the model to read them.
+- **`/system-report:init`** — scaffold automated daily health reporting into the current repo; then cron runs `ops/system-report/run.sh` every day: collect multi-instance logs → READ-ONLY AI triage (dead instances, regressions vs `KNOWN_ISSUES.md`, open items in `WATCHLIST.md`, code correlation) → severity-ranked digest to a webhook + a full dated file. `:run` for manual/debug, `:status` for readiness.
+- All are **project-agnostic**. Project specifics stay in each repo: roles read `docs/PROJECT_STATE.md` + `docs/workflow/PROJECT_CONTEXT.md`; system-report reads `ops/system-report/config.yml`.
 
 > Skills in a plugin are **namespaced by plugin name** → you type `/roles:cto`, `/roles:em` (not `/cto`). Rename the plugin dir + `plugin.json` name + `marketplace.json` source if you want a different prefix.
 
@@ -40,6 +48,7 @@ dung-tools/                              ← marketplace repo (push this to GitH
 ```
 /plugin marketplace add matran19900/dung-tools
 /plugin install roles@dung-tools
+/plugin install system-report@dung-tools
 ```
 Update later: push to this repo → `/plugin marketplace update dung-tools`.
 
@@ -54,7 +63,8 @@ Commit this into **each project repo** at `.claude/settings.json` — when a con
     }
   },
   "enabledPlugins": {
-    "roles@dung-tools": true
+    "roles@dung-tools": true,
+    "system-report@dung-tools": true
   }
 }
 ```

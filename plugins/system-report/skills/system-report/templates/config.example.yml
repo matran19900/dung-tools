@@ -1,0 +1,61 @@
+# system-report — manifest của DỰ ÁN (do /system-report:init sinh).
+# Skill là cơ chế; file này là toàn bộ phần đặc thù dự án.
+# ⚠️ KHÔNG đặt secret ở đây — chỉ đặt TÊN BIẾN MÔI TRƯỜNG (*_env).
+
+project: "{{PROJECT}}"
+
+# ── Transport: nơi Reporter đẩy log lên, runner đọc xuống ───────────────────────
+# type: redis | none
+#   redis → Redis-log RIÊNG (tách hạ tầng production, xem transport-redis.conf)
+#   none  → không có transport tập trung; mọi instance dùng source file:/http:/cmd:
+transport:
+  type: redis
+  host: "127.0.0.1"
+  port: 6399
+  db: 0
+  auth_env: REPORT_REDIS_PASS      # tên env chứa password (rỗng = không auth)
+  ttl_days: 7                      # TTL cho key REPORT_DAILY:* (Reporter tự set)
+
+# ── Instances: các bản chạy cần theo dõi ───────────────────────────────────────
+# name   : định danh duy nhất, nên đặt "{type}_{n}" để triage gộp theo loại
+# type   : nhóm logic (web / worker / db / cron / ...)
+# source : adapter lấy log
+#   redis:REPORT_DAILY          → key REPORT_DAILY:{date}:{name} trên transport
+#   file:/var/log/app/{date}.log→ đọc file ({date} được thay bằng ngày báo cáo)
+#   cmd:journalctl -u app --since "{date} 00:00" --until "{date} 23:59" --no-pager
+#   https://host/logs?d={date}  → GET (header auth lấy từ env REPORT_HTTP_AUTH nếu có)
+# optional: true → vắng report KHÔNG bị báo "nghi chết" (vd job chạy theo tuần)
+instances:
+  - { name: "{{INSTANCE}}", type: "web",    source: "redis:REPORT_DAILY" }
+  # - { name: worker_A,     type: "worker", source: "file:/var/log/worker/{date}.log" }
+  # - { name: db_1,         type: "db",     source: "cmd:docker logs --since 24h db_1 2>&1" }
+  # - { name: batch_weekly, type: "cron",   source: "redis:REPORT_DAILY", optional: true }
+
+# Runner còn tự SCAN REPORT_DAILY:{date}:* → instance MỚI chưa khai báo vẫn được gom
+# (topology động). Khai báo ở trên chỉ để (a) gắn type, (b) dùng adapter ngoài redis.
+discover_dynamic: true
+
+# ── Delivery ───────────────────────────────────────────────────────────────────
+delivery:
+  webhook_env: REPORT_WEBHOOK_URL  # Discord (/api/webhooks) | Slack (hooks.slack.com) | generic JSON
+  file_dir: "docs/system-report"   # bản đầy đủ: {file_dir}/{date}.md
+  keep_days: 90                    # dọn file report cũ hơn N ngày (0 = giữ hết)
+
+# ── Triage ─────────────────────────────────────────────────────────────────────
+correlate_paths: [ "src/" ]                  # subtree code cho AI đối chiếu file:line
+domain_signals:                              # tín hiệu đặc thù dự án, xếp theo độ nặng
+  - "5xx spike / unhandled exception"
+  - "latency p95 vượt ngưỡng"
+  - "queue backlog tăng liên tục"
+  - "job failed / retry loop"
+known_issues_file: "docs/KNOWN_ISSUES.md"
+watchlist_file: "ops/system-report/WATCHLIST.md"
+triage_prompt_file: "ops/system-report/triage-prompt.md"
+
+# ── Runner ─────────────────────────────────────────────────────────────────────
+cron: "7 8 * * *"        # chỉ để tài liệu hoá + /status đối chiếu crontab thật
+git_pull: true           # pull trước khi correlate (bỏ qua nếu working tree bẩn)
+max_log_lines: 2000      # trần dòng log gửi cho AI (đã ưu tiên ERROR/WARN + ngữ cảnh)
+max_lines_per_instance: 400
+timeout_sec: 300         # timeout cho 1 phiên triage
+claude_bin: "claude"     # đường dẫn CLI nếu không nằm trong PATH của cron

@@ -1,0 +1,7 @@
+# Runner + snippet chạy trên Linux (triage box, cron, container) → luôn LF,
+# kể cả khi checkout trên Windows. CRLF làm bash gãy với lỗi khó đọc kiểu $'\r'.
+*.sh        text eol=lf
+*.snippet   text eol=lf
+*.conf      text eol=lf
+*.py        text eol=lf
+*.go        text eol=lf
