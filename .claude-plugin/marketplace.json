@@ -17,7 +17,7 @@
       "name": "system-report",
       "source": "./plugins/system-report",
       "description": "Automated daily system health report. /system-report:init scaffolds config + tooling into any repo; /system-report:run collects multi-instance logs, runs a READ-ONLY AI triage (known-issues + watchlist + code correlation) and delivers a severity-ranked digest via webhook + dated file. Project-agnostic; project specifics live in the repo's ops/system-report/config.yml.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "keywords": ["ops", "monitoring", "health-report", "triage", "cron", "observability"]
     }
   ]

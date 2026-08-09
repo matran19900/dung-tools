@@ -32,6 +32,14 @@ nếu không thì nặng→nhẹ ra sao. Ràng buộc:
 | Transport | máy riêng / container riêng | có — `redis:` / `file:` / `cmd:` / `http:` per-instance |
 | Runner | 1 "triage box" chạy 24/7 | `run.sh` generic, cron gọi |
 | Trí nhớ | file trong repo | `KNOWN_ISSUES.md` (đã đóng) + `WATCHLIST.md` (đang mở) |
+| Kết quả có cấu trúc | `REPORT_RESULT:{date}` trên transport | OUTPUT của triage; chỗ chứa cho layer-2 (§7) |
+
+Hai chiều dữ liệu trên cùng 1 Redis-log, đừng lẫn:
+
+```
+REPORT_DAILY:{date}:{instance}   INPUT   raw log, per-instance, TTL ngắn (transport.ttl_days)
+REPORT_RESULT:{date}             OUTPUT  kết quả triage đã cấu trúc, 1 bản/RUN, TTL dài (result.ttl_days)
+```
 
 ## 3. Vì sao từng quyết định
 
@@ -93,8 +101,10 @@ kèm ngữ cảnh (−1/+2 dòng), cắt trần theo instance rồi cắt trần
        ├─ đọc adapter file:/cmd:/http: cho instance ngoài transport
        ├─ lọc + build payload (roster + signals + KNOWN_ISSUES + WATCHLIST + log)
        ├─ claude -p < payload   (timeout, read-only)
-       ├─ parse 3 block → ghi docs/system-report/{date}.md + WATCHLIST.md
-       └─ POST digest → webhook   |   exit code 0/2/3/4 cho cron
+       ├─ parse 4 block → ghi docs/system-report/{date}.md + WATCHLIST.md
+       ├─ POST digest → webhook
+       └─ SET REPORT_RESULT:{today} (JSON structured) + EXPIRE  → để dành cho layer-2 (§7)
+          exit code 0/2/3/4 cho cron
 08:08  Chủ dự án đọc 1 tin nhắn trên điện thoại.
 ```
 
@@ -106,7 +116,8 @@ kèm ngữ cảnh (−1/+2 dòng), cắt trần theo instance rồi cắt trần
 | Bỏ Redis | đặt `transport.type: none`, mỗi instance dùng `source: file:`/`cmd:`/`https:` |
 | Đổi kênh giao | `delivery.webhook_env` (tự nhận Discord/Slack/generic trong `run.sh`) |
 | Event real-time | `XADD REPORT_EVENT:{instance}` + 1 nhánh đọc stream trong runner |
-| Giảm báo động giả | thêm 1 phiên AI thứ 2 verify đối kháng findings trước khi gửi (xem SKILL §9) |
+| Giảm báo động giả | layer-2 đọc `REPORT_RESULT:{date}.findings[]` và verify đối kháng (§7) |
+| Soi xu hướng nhiều ngày | đọc `REPORT_RESULT:*` — đã có sẵn N ngày history, không cần parse lại markdown |
 | Nhiều dự án 1 triage box | mỗi repo có `ops/system-report/config.yml` riêng; cron 1 dòng/dự án |
 
 ## 6. Giới hạn đã biết
@@ -118,3 +129,37 @@ kèm ngữ cảnh (−1/+2 dòng), cắt trần theo instance rồi cắt trần
 - **AI có thể sai**: mọi finding bắt buộc kèm trích log; `file:line` không tìm được thì ghi
   "chưa correlate được". Người đọc vẫn phải là người quyết định.
 - **Không tự sửa gì**: theo thiết kế. Vòng fix do người chủ động (`/roles:cto` → `/roles:em`).
+- **Single-pass**: triage chạy đúng 1 lượt, không ai phản biện nó → findings có thể có báo động giả.
+  Đó là việc của layer-2 (§7), chưa build.
+
+## 7. Tầng: layer-1 hôm nay, layer-2 để dành
+
+**Layer-1** (đang chạy) = tầng lọc log đầu tiên: gom → phát hiện → xếp hạng → giao. **1 lượt, không
+red-team.** Điểm mới: ngoài digest + file, nó **lưu lại kết quả có cấu trúc** vào `REPORT_RESULT:{date}`.
+
+**Layer-2** = **consumer tương lai** của key đó — **chưa build**, hiện chỉ có chỗ chứa, không ai đọc.
+
+```
+layer-1 (mỗi ngày)                          layer-2 (chưa build)
+raw log ──▶ triage single-pass ──▶ REPORT_RESULT:{date} ──▶ ? red-team findings
+                │                   {status, digest,      ──▶ ? đào sâu 1 finding
+                ├─▶ webhook digest    report_md,          ──▶ ? xu hướng N ngày
+                └─▶ {date}.md         findings[], error}
+```
+
+Vì sao dựng chỗ chứa **trước khi** có người đọc: dữ liệu quá khứ **không hồi tố được**. Nếu đợi đến
+lúc build layer-2 mới bắt đầu lưu thì ngày đầu tiên nó chạy sẽ không có history nào để so.
+Chi phí của việc lưu sớm là 1 lệnh `SET` — rẻ hơn nhiều so với mất vài tháng dữ liệu.
+
+Ba ràng buộc đã đóng đinh trong layer-1 để layer-2 sau này dùng được:
+1. **Structured chứ không chỉ prose.** Nếu chỉ lưu markdown, layer-2 phải parse lại văn bản do AI viết
+   — dễ vỡ. `findings[]` có schema cố định (`severity` chỉ nhận `CAO|VUA|THAP`, không emoji, không dấu).
+2. **Ngày hỏng cũng có bản ghi** (`status:"red"`, `findings:[]`, `error:"<lý do>"`). Không có dòng này
+   thì layer-2 sẽ đọc "ngày 03/08 không có gì" và tưởng là ngày sạch, trong khi thực ra triage chết.
+   Cùng logic với heartbeat: **thiếu dữ liệu ≠ dữ liệu tốt**.
+3. **`schema` + `layer`** trong bản ghi → layer-2 kiểm version trước khi đọc, và không bao giờ nhầm
+   output của mình với output layer-1. Layer-2 **không được sửa** `REPORT_RESULT:*`; muốn ghi kết quả
+   riêng thì dùng namespace khác (vd `REPORT_RESULT2:{date}`).
+
+TTL result (mặc định 90 ngày) **dài hơn** TTL raw log (7 ngày) có chủ đích: raw log là thứ cồng kềnh và
+hết giá trị nhanh; kết luận đã cô đọng thì giữ lâu để còn so sánh.

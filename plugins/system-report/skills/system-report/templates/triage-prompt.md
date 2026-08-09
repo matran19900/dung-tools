@@ -81,9 +81,47 @@ Chủ dự án không trực máy: báo cáo của bạn là thứ duy nhất h�
 <TOÀN BỘ nội dung mới của WATCHLIST.md — giữ nguyên format file gốc, cập nhật last_seen/
  count/trend từng khối, thêm khối mới cho vấn đề đáng theo dõi, đánh dấu (đề xuất đóng)
  thay vì xoá. LUÔN in block này, kể cả khi không đổi gì.>
+===FINDINGS_JSON===
+[
+  {
+    "id": "F1",
+    "severity": "CAO",
+    "instances": ["worker_A"],
+    "title": "<1 dòng, đúng finding đã nêu ở REPORT>",
+    "evidence": "<≤3 dòng log thật>",
+    "file_line": "src/OrderService.cs:212",
+    "hypothesis": "<nguyên nhân nghi ngờ>",
+    "suggestion": "<việc con người nên làm>",
+    "watch_ref": "WATCH-001"
+  }
+]
 ===END===
 ```
 
-Không in gì ngoài 4 marker trên. Không bọc toàn bộ output trong code fence.
+Không in gì ngoài **5 marker** trên (`DIGEST` / `REPORT` / `WATCHLIST` / `FINDINGS_JSON` / `END`).
+Không bọc toàn bộ output trong code fence.
+
+### Về `===FINDINGS_JSON===` (bản máy-đọc-được)
+- Đây là **đúng những finding đã nêu ở `===REPORT===`**, dịch sang JSON — **không thêm, không bớt,
+  không đổi mức**. Nó là bản cho máy đọc, không phải chỗ nói thêm ý mới.
+- **1 mảng JSON hợp lệ**, không markdown, **không bọc code fence**, không comment, không dấu phẩy thừa.
+- **CLEAN (không có finding nào) → in đúng `[]`** (vẫn phải có block, không được bỏ trống).
+- Trường bắt buộc mỗi phần tử — thiếu dữ liệu thì để `null`, **đừng bịa**:
+
+  | trường | kiểu | ghi chú |
+  |---|---|---|
+  | `id` | string | `F1`, `F2`… duy nhất trong ngày, theo thứ tự nặng→nhẹ |
+  | `severity` | string | **đúng 1 trong**: `CAO` \| `VUA` \| `THAP` (không dấu, không emoji) |
+  | `instances` | string[] | instance liên quan; toàn hệ thống → `[]` |
+  | `title` | string | 1 dòng, khớp tiêu đề finding ở REPORT |
+  | `evidence` | string | trích log thật, ≤3 dòng (dùng `\n` trong chuỗi JSON) |
+  | `file_line` | string\|null | `path/file.ext:line`; chưa correlate được → `null` |
+  | `hypothesis` | string\|null | nguyên nhân nghi ngờ |
+  | `suggestion` | string | việc con người nên làm |
+  | `watch_ref` | string\|null | `WATCH-00x` nếu khớp mục đang theo dõi, không thì `null` |
+
+- Dữ liệu này được lưu lại theo ngày để **tầng phân tích sau (layer-2: red-team / đào sâu / xu hướng
+  nhiều ngày)** đọc — nên viết `title`/`evidence` sao cho **đọc lại sau 2 tuần vẫn hiểu**, không phụ
+  thuộc ngữ cảnh hôm nay.
 
 <!-- Tín hiệu domain của dự án (init điền): {{DOMAIN_SIGNALS}} -->

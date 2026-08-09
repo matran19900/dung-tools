@@ -41,6 +41,16 @@ delivery:
   file_dir: "docs/system-report"   # bản đầy đủ: {file_dir}/{date}.md
   keep_days: 90                    # dọn file report cũ hơn N ngày (0 = giữ hết)
 
+# ── Kết quả có cấu trúc (OUTPUT của triage) ───────────────────────────────────
+# Hai namespace ngược chiều nhau, đừng lẫn:
+#   REPORT_DAILY:{date}:{instance}  = INPUT  — raw log do Reporter đẩy lên, per-instance
+#   REPORT_RESULT:{date}            = OUTPUT — kết quả triage đã cấu trúc, 1 bản/RUN toàn hệ thống
+# REPORT_RESULT là chỗ chứa để **layer-2** (red-team / đào sâu / xu hướng nhiều ngày) đọc sau này;
+# layer-2 CHƯA build. Digest webhook + file {date}.md KHÔNG đổi — đây chỉ là bản ghi THÊM.
+result:
+  to_redis: true      # ghi REPORT_RESULT:{date} vào transport redis (false = chỉ webhook + file)
+  ttl_days: 90        # giữ result lâu hơn raw log (transport.ttl_days) để còn soi xu hướng
+
 # ── Triage ─────────────────────────────────────────────────────────────────────
 correlate_paths: [ "src/" ]                  # subtree code cho AI đối chiếu file:line
 domain_signals:                              # tín hiệu đặc thù dự án, xếp theo độ nặng

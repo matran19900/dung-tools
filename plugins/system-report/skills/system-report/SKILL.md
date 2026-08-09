@@ -41,12 +41,13 @@ Báo cáo là **1 chiều**; vòng fix để con người chủ động (skill K
 ```
 
 ### 3.2 Contract dữ liệu (generic)
-Transport mặc định = Redis instance **RIÊNG** (tách hạ tầng production của dự án). 3 key:
-| Key | Ai ghi | Mục đích |
-|---|---|---|
-| `APPEND/SET REPORT_DAILY:{yyyy-MM-dd}:{INSTANCE}` | Reporter | log/telemetry ngày (có TTL) |
-| `SADD REPORT_INSTANCES {INSTANCE}` (1 lần/start) | Reporter | đăng ký "tôi tồn tại" → bắt instance chết |
-| `XADD REPORT_EVENT:{INSTANCE} ...` *(mở rộng)* | Reporter | event real-time (không chỉ daily) |
+Transport mặc định = Redis instance **RIÊNG** (tách hạ tầng production của dự án).
+| Key | Chiều | Ai ghi | Mục đích |
+|---|---|---|---|
+| `APPEND/SET REPORT_DAILY:{yyyy-MM-dd}:{INSTANCE}` | **input** | Reporter | log/telemetry ngày (có TTL) |
+| `SADD REPORT_INSTANCES {INSTANCE}` (1 lần/start) | **input** | Reporter | đăng ký "tôi tồn tại" → bắt instance chết |
+| `SET REPORT_RESULT:{yyyy-MM-dd}` | **output** | Runner (sau triage) | kết quả triage đã cấu trúc, **1 bản/RUN toàn hệ thống** (không per-instance) — xem §3.5 |
+| `XADD REPORT_EVENT:{INSTANCE} ...` *(mở rộng)* | input | Reporter | event real-time (không chỉ daily) |
 - `INSTANCE` = tên bản chạy, nhiều bản/loại: `web_1`, `worker_A`, `db_2`… topology **động**.
 - Đặt tên `{TYPE}_...` (prefix theo loại) để triage suy ra loại + gộp; hoặc Reporter đẩy kèm field `type`.
 - **Transport có thể thay** (Redis / file / HTTP / cmd) — runner đọc qua 1 adapter; Redis là mặc định vì rẻ + đa-máy.
@@ -58,7 +59,8 @@ Transport mặc định = Redis instance **RIÊNG** (tách hạ tầng productio
 
 ### 3.4 Bất biến / guardrail (BẮT BUỘC mọi dự án)
 1. **Triage READ-ONLY hệ thống:** chỉ chẩn đoán/đề xuất; KHÔNG sửa/commit/deploy code sản phẩm.
-   Phiên AI thậm chí **không tự ghi file** — nó xuất text theo contract §5.1, **runner** ghi report + WATCHLIST.
+   Phiên AI thậm chí **không tự ghi file** — nó xuất text theo contract §5.1, **runner** ghi report,
+   WATCHLIST và `REPORT_RESULT:{date}`.
 2. **Reporter airtight:** nuốt mọi exception, async — telemetry hỏng KHÔNG ảnh hưởng hệ thống.
 3. **Reporter opt-in:** mặc định TẮT (`REPORT_ENABLED=false`); build có nhưng trơ tới khi bật.
 4. **Reporter tách file, gỡ 1 nốt:** toàn bộ trong 1 file riêng + wiring đúng 1 dòng → xoá file + 1 dòng là hết.
@@ -67,6 +69,35 @@ Transport mặc định = Redis instance **RIÊNG** (tách hạ tầng productio
    Triage fail/timeout → runner vẫn gửi digest 🔴 "TRIAGE FAILED".
 7. **Bắt instance chết:** diff SCAN kết quả vs `REPORT_INSTANCES` → đã đăng ký mà vắng report → cảnh báo.
 8. **Timeout** mỗi run (AI có thể treo). **Secrets** (webhook, transport auth) chỉ qua **env**, không hard-code/commit.
+
+### 3.5 Tầng (layer) — layer-1 hôm nay, layer-2 để dành
+- **Layer-1 = triage single-pass** (cái đang chạy): **tầng lọc log đầu tiên** — gom log, phát hiện,
+  xếp hạng, giao digest. **1 lượt, không red-team.** Ngoài digest + file, nó **lưu kết quả có cấu trúc**
+  vào `REPORT_RESULT:{date}` trên chính Redis-log riêng.
+- **Layer-2 = CONSUMER tương lai** của `REPORT_RESULT` (red-team findings, đào sâu 1 vấn đề, soi xu hướng
+  nhiều ngày). **CHƯA build** — hiện chỉ dựng sẵn **chỗ chứa**, không có ai đọc.
+- Vì sao lưu sớm: dữ liệu quá khứ **không hồi tố được**. Ngày nào không lưu là ngày layer-2 vĩnh viễn mù.
+
+**Bản ghi `REPORT_RESULT:{date}`** (JSON, TTL `result.ttl_days`, mặc định 90 ngày):
+```jsonc
+{ "schema": 1, "layer": 1, "project": "...", "date": "2026-08-09",
+  "status": "green|yellow|red",           // suy từ digest; ngày triage hỏng luôn là "red"
+  "digest": "...", "report_md": "...",    // đúng bản đã gửi webhook / đã ghi file
+  "findings": [ { "id": "F1", "severity": "CAO|VUA|THAP", "instances": ["worker_A"],
+                  "title": "...", "evidence": "...", "file_line": "src/x.cs:212|null",
+                  "hypothesis": "...", "suggestion": "...", "watch_ref": "WATCH-001|null" } ],
+  "error": null,                          // != null → ngày HỎNG, findings KHÔNG đáng tin
+  "instances_reported": 3, "instances_missing": ["ghost_1"],
+  "report_path": "...", "generated_at": "2026-08-09T08:07:12+07:00" }
+```
+Bất biến của bản ghi này:
+1. **Chỉ THÊM, không đổi hành vi cũ** — webhook + file dated giữ nguyên; ghi result hỏng thì **log WARN
+   và đi tiếp**, không đổi exit code.
+2. **Ngày hỏng cũng phải có bản ghi**: triage fail/timeout → vẫn `SET` với `status:"red"`,
+   `findings: []`, `error: "<lý do>"` → history của layer-2 thấy cả lỗ hổng, không tưởng nhầm là ngày sạch.
+3. **`findings` là bản dịch của đúng findings trong `report_md`** — không thêm/bớt/đổi mức.
+4. Vẫn nằm trên **Redis-log RIÊNG**, namespace `REPORT_*`. Không đụng production, không đụng `REPORT_DAILY:*`.
+5. Tắt được bằng `result.to_redis: false` — hệ thống chạy y như trước.
 
 ## 4. Workflows (nội dung 3 command)
 
@@ -99,10 +130,12 @@ Mục tiêu: sinh **config + tooling đã adapt** cho repo này. Các bước Cl
    - Xuất theo contract §5.1.
 4. **Runner** tách output → ghi `WATCHLIST.md` (tần suất/escalate/đóng) + file report dated.
 5. **Giao**: digest gọn → webhook; bản đầy đủ → `{file_dir}/{date}.md`. Heartbeat: luôn gửi.
-6. Exit code rõ cho cron (§5.2); không throw ra ngoài làm hỏng lịch.
+6. **Lưu kết quả có cấu trúc** → `SET REPORT_RESULT:{date}` + `EXPIRE` (§3.5). Kể cả ngày triage hỏng.
+7. Exit code rõ cho cron (§5.2); không throw ra ngoài làm hỏng lịch.
 
 ### `/system-report:status`
-In: instances đã đăng ký vs report hôm nay (ai thiếu), giờ cron, delivery target, WATCHLIST đang mở, lần chạy gần nhất.
+In: instances đã đăng ký vs report hôm nay (ai thiếu), giờ cron, delivery target, WATCHLIST đang mở,
+**`REPORT_RESULT:{today}` đã có chưa** (+ số findings, số ngày history đang lưu), lần chạy gần nhất.
 
 ## 5. Format báo cáo chuẩn (digest — đọc mobile)
 ```
@@ -115,14 +148,19 @@ In: instances đã đăng ký vs report hôm nay (ai thiếu), giờ cron, deliv
 Ngày ổn vẫn gửi 1 dòng (heartbeat). Bản đầy đủ (bằng chứng + file:line) trong file dated.
 
 ### 5.1 Contract output của phiên triage (AI → runner)
-Phiên AI **chỉ in text**; runner parse 3 block (marker phải ở đầu dòng, không thừa ký tự):
+Phiên AI **chỉ in text**; runner parse 4 block (marker phải ở đầu dòng, không thừa ký tự):
 ```
-===DIGEST===      → digest §5, ≤ ~15 dòng, gửi webhook
-===REPORT===      → bản đầy đủ markdown, ghi {file_dir}/{date}.md
-===WATCHLIST===   → TOÀN BỘ nội dung mới của WATCHLIST.md (runner ghi đè)
+===DIGEST===        → digest §5, ≤ ~15 dòng, gửi webhook
+===REPORT===        → bản đầy đủ markdown, ghi {file_dir}/{date}.md
+===WATCHLIST===     → TOÀN BỘ nội dung mới của WATCHLIST.md (runner ghi đè)
+===FINDINGS_JSON=== → MẢNG JSON các finding (§3.5) — bản máy-đọc-được của ĐÚNG findings ở REPORT;
+                      CLEAN → `[]`. Runner validate rồi nhét vào REPORT_RESULT:{date}.
 ===END===
 ```
-Thiếu `===WATCHLIST===` → runner giữ nguyên file cũ (fail-safe, không bao giờ xoá trắng).
+Fail-safe từng block, không block nào được phép làm hỏng run:
+- thiếu `===WATCHLIST===` → giữ nguyên file cũ (không bao giờ xoá trắng);
+- `===FINDINGS_JSON===` thiếu / JSON hỏng / không phải mảng → coi như `[]` + log WARN; digest, file
+  và webhook **không bị ảnh hưởng**.
 
 ### 5.2 Exit code của runner
 `0` ok · `1` lỗi config/prereq · `2` lỗi transport (không gom được log) · `3` triage fail/timeout
@@ -175,15 +213,27 @@ plugins/system-report/
 Đường dẫn khi chạy: `${CLAUDE_PLUGIN_ROOT}/skills/system-report/templates/<file>`.
 Mọi template **generic** (placeholder `{{PROJECT}}`, `{{INSTANCE}}`…), KHÔNG hard-code dự án nào.
 
-## 9. Quan hệ với skill khác
+## 9. Quan hệ với skill khác & layer-2 (chưa build)
 - **Độc lập** với `roles:cto` (không nhúng). `roles:cto` chỉ **cross-ref**: "muốn giám sát sức khoẻ
   hằng ngày → dùng skill `system-report`". Giữ CTO gọn, tránh bloat.
-- Có thể ghép sau: CTO thứ 2 verify đối kháng findings trước khi lên chủ dự án (giảm báo động giả).
+- **Layer-2 — CHƯA BUILD, chỉ đã có chỗ chứa.** Hiện tại triage là **single-pass**: 1 lượt, không
+  red-team, không đào sâu. Cái đã làm là **đặt sẵn dữ liệu**: mỗi ngày ghi `REPORT_RESULT:{date}`
+  (§3.5) — structured, có TTL dài hơn raw log. Khi build layer-2, nó là **consumer** đọc key này:
+  | hướng layer-2 | đọc gì từ REPORT_RESULT |
+  |---|---|
+  | red-team / verify đối kháng | `findings[]` của **hôm nay** → soi lại từng cái, loại báo động giả trước khi lên chủ dự án |
+  | đào sâu 1 vấn đề | 1 `finding.id` + `evidence` + `file_line` → điều tra codebase kỹ hơn |
+  | xu hướng nhiều ngày | `REPORT_RESULT:*` N ngày → cái gì lặp lại/leo thang, `status` xấu dần không |
+  Ràng buộc khi build: layer-2 **cũng READ-ONLY hệ thống**, và **không sửa** bản ghi layer-1
+  (muốn ghi kết quả riêng → dùng namespace khác, vd `REPORT_RESULT2:{date}`); kiểm `schema` trước khi đọc.
 
 ## 10. Checklist verify sau khi init (chạy được, không chỉ đọc)
 - [ ] `bash ops/system-report/run.sh --check` → in prereq (python3, claude, redis-cli/curl) + config hợp lệ.
 - [ ] `bash ops/system-report/run.sh --dry-run` → gom log + build payload, KHÔNG gọi AI, KHÔNG gửi webhook.
 - [ ] 1 lần chạy thật → digest đúng format §5 + file `{file_dir}/{date}.md` + WATCHLIST được cập nhật.
+- [ ] **`REPORT_RESULT:{date}` được ghi structured** (JSON parse được, `findings[]` khớp findings trong
+      report, ngày triage hỏng vẫn có bản ghi `status:"red"` + `error`), và `--status` thấy nó:
+      `run.sh --status` → dòng "✅ REPORT_RESULT:… (findings: N · status)".
 - [ ] Ngày sạch vẫn có digest (heartbeat); tắt transport → vẫn có digest báo động (exit 2/3).
 - [ ] Instance đăng ký mà vắng report → xuất hiện mục "nghi chết".
 - [ ] Reporter: `REPORT_ENABLED` chưa bật → hệ thống chạy y hệt; bật lên → key `REPORT_*` xuất hiện.

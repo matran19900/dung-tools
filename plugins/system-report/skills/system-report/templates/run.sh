@@ -16,7 +16,10 @@
 # Exit code (cho cron):
 #   0 ok · 1 config/prereq · 2 transport · 3 triage fail/timeout · 4 webhook fail
 #
-# GUARDRAIL: script này CHỈ ghi trong {file_dir}, WATCHLIST và .last-run.
+# Ngoài digest+file, runner còn lưu KẾT QUẢ CÓ CẤU TRÚC vào `REPORT_RESULT:{date}` trên chính
+# Redis-log riêng (bật/tắt bằng result.to_redis) — chỗ chứa cho layer-2 đọc sau này.
+#
+# GUARDRAIL: script này CHỈ ghi trong {file_dir}, WATCHLIST, .last-run và REPORT_RESULT:*.
 # Nó KHÔNG sửa/commit/deploy code sản phẩm. Phiên AI chạy read-only, không tự ghi file.
 # ==============================================================================
 set -uo pipefail
@@ -238,6 +241,9 @@ TIMEOUT_SEC="$(cfgd timeout_sec "300")"
 CLAUDE_BIN="$(cfgd claude_bin "claude")"
 GIT_PULL="$(cfgd git_pull "false")"
 DISCOVER="$(cfgd discover_dynamic "true")"
+# Kết quả có cấu trúc (OUTPUT của layer-1) — chỗ chứa cho layer-2 đọc sau này.
+RESULT_TO_REDIS="$(cfgd result.to_redis "true")"
+RESULT_TTL_DAYS="$(cfgd result.ttl_days "90")"
 
 # Repo root = nơi correlate code; mọi path tương đối tính từ đây.
 REPO_ROOT="$(cd "$SELF_DIR" && git rev-parse --show-toplevel 2>/dev/null)" || REPO_ROOT=""
@@ -337,6 +343,20 @@ if [ "$MODE" = "status" ]; then
   echo "  file_dir: $FILE_DIR_ABS ($(ls -1 "$FILE_DIR_ABS" 2>/dev/null | wc -l | tr -d ' ') file)"
   echo "--- watchlist đang mở ---"
   grep -nE '^##+ *WATCH-' "$WATCH_FILE" 2>/dev/null | sed 's/^/  /' || echo "  (rỗng)"
+  echo "--- kết quả có cấu trúc (REPORT_RESULT — layer-2 đọc cái này) ---"
+  echo "  result.to_redis: $RESULT_TO_REDIS · ttl_days: $RESULT_TTL_DAYS"
+  if [ "$T_TYPE" = "redis" ] && [ "$TRANSPORT_ERR" = "0" ]; then
+    if [ "$(rcli --raw EXISTS "REPORT_RESULT:$DATE" 2>/dev/null)" = "1" ]; then
+      echo "  ✅ REPORT_RESULT:$DATE đã có (ttl còn $(rcli --raw TTL "REPORT_RESULT:$DATE" 2>/dev/null)s)"
+      echo "     findings: $(rcli --raw GET "REPORT_RESULT:$DATE" 2>/dev/null \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("findings",[])), "·", d.get("status","?"))' 2>/dev/null || echo '(không đọc được JSON)')"
+    else
+      echo "  ⚠️  REPORT_RESULT:$DATE chưa có (hôm nay chưa chạy, hoặc to_redis=false)"
+    fi
+    echo "  lịch sử: $(rcli --scan --pattern 'REPORT_RESULT:*' 2>/dev/null | grep -c . || echo 0) ngày đang lưu"
+  else
+    echo "  (transport không phải redis / không truy cập được → không lưu được result)"
+  fi
   echo "--- lần chạy gần nhất ---"
   [ -f "$LAST_RUN" ] && sed 's/^/  /' "$LAST_RUN" || echo "  (chưa chạy lần nào)"
   exit 0
@@ -487,6 +507,11 @@ fi
 if [ "$MODE" = "dry" ]; then
   log "--dry-run: payload tại $PAYLOAD ($(wc -l <"$PAYLOAD") dòng) — copy ra trước khi thoát"
   cp "$PAYLOAD" "$SELF_DIR/.last-payload.md" && log "đã lưu $SELF_DIR/.last-payload.md"
+  if [ "$RESULT_TO_REDIS" != "false" ] && [ "$T_TYPE" = "redis" ]; then
+    log "--dry-run: KHÔNG gọi AI → findings_json = [] ; run thật sẽ lưu REPORT_RESULT:$DATE (ttl ${RESULT_TTL_DAYS}d)"
+  else
+    log "--dry-run: result.to_redis=$RESULT_TO_REDIS / transport=$T_TYPE → sẽ KHÔNG lưu REPORT_RESULT"
+  fi
   head -n 60 "$PAYLOAD"
   exit 0
 fi
@@ -510,15 +535,40 @@ $TIMEOUT_CMD "$CLAUDE_BIN" -p "$PROMPT_TEXT" \
   <"$PAYLOAD" >"$OUT" 2>"$ERR"
 TRIAGE_RC=$?
 
-extract() { awk -v m="===$1===" 'index($0,m)==1{f=1;next} /^===[A-Z]+===$/{f=0} f{print}' "$2"; }
+extract() { awk -v m="===$1===" 'index($0,m)==1{f=1;next} /^===[A-Z_]+===$/{f=0} f{print}' "$2"; }
 
 DIGEST=""; REPORT=""; NEWWATCH=""
+echo '[]' >"$WORK/findings.json"; FINDINGS_N=0
 if [ "$TRIAGE_RC" -eq 0 ] && [ -s "$OUT" ]; then
   DIGEST="$(extract DIGEST "$OUT")"
   REPORT="$(extract REPORT "$OUT")"
   NEWWATCH="$(extract WATCHLIST "$OUT")"
+  # Findings máy-đọc-được (OUTPUT có cấu trúc cho layer-2). JSON hỏng KHÔNG được làm hỏng run.
+  extract FINDINGS_JSON "$OUT" >"$WORK/findings.raw"
+  if [ -s "$WORK/findings.raw" ]; then
+    if FINDINGS_N="$(python3 - "$WORK/findings.raw" "$WORK/findings.json" <<'PYEOF'
+import json, sys
+raw = open(sys.argv[1], encoding='utf-8').read().strip()
+if raw.startswith('```'):  # phòng khi AI vẫn bọc code fence dù prompt cấm
+    raw = '\n'.join(l for l in raw.splitlines() if not l.strip().startswith('```')).strip()
+data = json.loads(raw) if raw else []
+if not isinstance(data, list):
+    raise ValueError('FINDINGS_JSON phải là MẢNG')
+json.dump(data, open(sys.argv[2], 'w', encoding='utf-8'), ensure_ascii=False)
+print(len(data))
+PYEOF
+    )"; then
+      log "findings có cấu trúc: $FINDINGS_N mục"
+    else
+      log "WARN: FINDINGS_JSON không parse được → coi như [] (digest/report/webhook KHÔNG bị ảnh hưởng)"
+      echo '[]' >"$WORK/findings.json"; FINDINGS_N=0
+    fi
+  else
+    log "WARN: triage không in block ===FINDINGS_JSON=== → coi như []"
+  fi
 fi
 
+TRIAGE_ERROR=""
 if [ -z "$DIGEST" ]; then
   # Heartbeat guardrail: im lặng KHÔNG BAO GIỜ được hiểu là "mọi thứ tốt".
   REASON="triage lỗi (rc=$TRIAGE_RC)"
@@ -543,6 +593,7 @@ $(head -n 80 "$OUT" 2>/dev/null)
 \`\`\`
 "
   [ "$TRIAGE_RC" -eq 0 ] && TRIAGE_RC=3
+  TRIAGE_ERROR="$REASON"
 fi
 
 # ── Ghi file (chỉ trong thư mục của chính nó) ────────────────────────────────
@@ -587,6 +638,73 @@ elif [ "$SEND_WEBHOOK" = "1" ]; then
   log "WARN: $WEBHOOK_ENV chưa set → bỏ qua webhook (chỉ ghi file)"
 fi
 
+# ── Lưu KẾT QUẢ CÓ CẤU TRÚC vào Redis-log (OUTPUT của layer-1) ───────────────
+# REPORT_RESULT:{date} = 1 bản ghi/RUN cho TOÀN hệ thống (khác REPORT_DAILY:* là INPUT raw log
+# per-instance). Đây là chỗ chứa cho layer-2 (red-team / đào sâu / xu hướng nhiều ngày) đọc sau này
+# — layer-2 CHƯA build. Ghi vào chính Redis-log RIÊNG, không phải Redis production.
+# Lỗi ở bước này KHÔNG đổi exit code: Discord + file mới là đường giao chính.
+RESULT_KEY="REPORT_RESULT:$DATE"
+if [ "$RESULT_TO_REDIS" != "false" ] && [ "$T_TYPE" = "redis" ] && [ "$TRANSPORT_ERR" = "0" ]; then
+  RESULT_JSON="$WORK/result.json"
+  if DIGEST="$DIGEST" PROJECT="$PROJECT" DATE="$DATE" TRIAGE_ERROR="$TRIAGE_ERROR" \
+     REPORT_PATH="$REPORT_PATH" MISSING="${MISSING:-}" REPORTED_N="$REPORTED_N" \
+     python3 - "$WORK/findings.json" "$REPORT_PATH" >"$RESULT_JSON" <<'PYEOF'
+import json, os, sys
+from datetime import datetime
+
+digest = os.environ['DIGEST']
+err = os.environ.get('TRIAGE_ERROR', '')
+findings = json.load(open(sys.argv[1], encoding='utf-8'))
+try:
+    report_md = open(sys.argv[2], encoding='utf-8').read()
+except OSError:
+    report_md = ''
+
+# status lấy từ DÒNG ĐẦU digest (dòng trạng thái §5), không quét cả digest — rollup instance
+# bên dưới cũng chứa emoji và sẽ làm lệch kết quả. Sau đó nâng mức theo severity của findings.
+head = digest.strip().splitlines()[0] if digest.strip() else ''
+rank = {'green': 0, 'yellow': 1, 'red': 2}
+status = 'red' if '🔴' in head else 'yellow' if '🟡' in head else 'green'
+for f in findings if isinstance(findings, list) else []:
+    sev = str(f.get('severity', '')).upper() if isinstance(f, dict) else ''
+    esc = 'red' if sev == 'CAO' else 'yellow' if sev == 'VUA' else 'green'
+    if rank[esc] > rank[status]:
+        status = esc
+if err:
+    status = 'red'
+
+print(json.dumps({
+    'schema': 1,                       # layer-2 kiểm field này trước khi đọc
+    'layer': 1,                        # 1 = single-pass triage (tầng lọc log đầu tiên)
+    'project': os.environ['PROJECT'],
+    'date': os.environ['DATE'],
+    'status': status,                  # green | yellow | red
+    'digest': digest,
+    'report_md': report_md,
+    'findings': findings,              # [] khi CLEAN hoặc khi triage hỏng
+    'error': err or None,              # != None → ngày hỏng, findings KHÔNG đáng tin
+    'instances_reported': int(os.environ.get('REPORTED_N') or 0),
+    'instances_missing': os.environ.get('MISSING', '').split(),
+    'report_path': os.environ['REPORT_PATH'],
+    'generated_at': datetime.now().astimezone().isoformat(timespec='seconds'),
+}, ensure_ascii=False))
+PYEOF
+  then
+    if rcli -x SET "$RESULT_KEY" <"$RESULT_JSON" >/dev/null 2>&1 \
+       && rcli EXPIRE "$RESULT_KEY" "$((RESULT_TTL_DAYS * 86400))" >/dev/null 2>&1; then
+      log "đã lưu $RESULT_KEY ($FINDINGS_N findings, ttl ${RESULT_TTL_DAYS}d) — layer-2 đọc key này"
+    else
+      log "WARN: ghi $RESULT_KEY thất bại — báo cáo vẫn giao qua webhook + $REPORT_PATH"
+    fi
+  else
+    log "WARN: dựng JSON kết quả thất bại → bỏ qua $RESULT_KEY (không ảnh hưởng digest/file)"
+  fi
+elif [ "$RESULT_TO_REDIS" = "false" ]; then
+  log "result.to_redis=false → không lưu $RESULT_KEY"
+else
+  log "WARN: transport không sẵn sàng → không lưu $RESULT_KEY (layer-2 sẽ thiếu ngày $DATE)"
+fi
+
 echo "----- DIGEST -----"; printf '%s\n' "$DIGEST"; echo "------------------"
 
 RC=0
@@ -600,5 +718,7 @@ RC=0
   echo "instances_reported=$REPORTED_N"
   echo "missing=${MISSING:-none}"
   echo "report=$REPORT_PATH"
+  echo "findings=$FINDINGS_N"
+  echo "result_key=$RESULT_KEY"
 } >"$LAST_RUN"
 exit $RC
