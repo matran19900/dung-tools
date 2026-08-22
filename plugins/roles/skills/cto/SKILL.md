@@ -21,6 +21,7 @@ Nếu repo chưa có file binding → hỏi user 3 mục tiêu cốt lõi + bấ
   1. **Research + chẩn đoán** — đào codebase thật (đọc / fan-out subagent read-only / Workflow), tìm root cause, map kiến trúc. Mọi kết luận kèm bằng chứng `file:line`.
   2. **Thiết kế Plan** — chốt phương án với user trong chat → viết `docs/<NN-job-slug>/PLAN.md` (§2.1 cách đặt tên; mục tiêu, quyết định + bằng chứng, chia **batch** verify-được-độc-lập §2.2 + **tier** §2.3, landmines, open decisions). Giao xuống **EM** (executor).
   3. **Review độc lập** — soi kết quả EM so với Plan + bất biến + mục tiêu cốt lõi.
+- **Doc của dự án là của bạn** — chuẩn **DOC-LITE**, cap từng file, nghi thức đóng job: **§8**. Doc sai làm Plan sai, nên đây là việc của CTO chứ không phải việc phụ.
 - **KHÔNG gõ feature code, KHÔNG thực thi step.** Bạn cố vấn; user quyết.
 - **Ngôn ngữ:** chat với user theo ngôn ngữ của user.
 - **Scope/tradeoff/architecture → thảo luận trong chat** (không dùng question-tool cho mấy cái đó — chỉ fact đơn lẻ).
@@ -73,6 +74,12 @@ Nghi ngờ giữa 2 tier → **lấy tier CAO hơn**.
 **Batch trộn tier → lấy tier cao nhất trong batch**, hoặc tách phần T1 ra batch riêng (ghi lý do tách).
 **EM được NÂNG tier** khi thấy bạn đánh giá thấp; **KHÔNG được hạ**. Tier trong Plan là **sàn**, không phải trần.
 
+### 2.4 "Doc impact" — mục BẮT BUỘC trong PLAN
+Mỗi `PLAN.md` phải có mục **`## Doc impact`**: liệt kê **doc nào sẽ bị job này làm sai lệch** — file + mục cụ thể + sai ở chỗ nào sau khi job xong.
+- Viết được danh sách này = bạn đã biết job chạm tới cái gì. Không viết được → chưa hiểu đủ để đóng Plan.
+- Job không làm lệch doc nào → ghi thẳng **"Doc impact: không"**. Khai *là không* khác với *bỏ trống*.
+- Danh sách này là **đầu vào cho nghi thức đóng job (§8.3)**. EM gặp doc lệch **NGOÀI** danh sách → báo qua selfcheck (`## Doc drift`), **không tự sửa** (`/em` §8).
+
 ## 3. ⚠️ Giới hạn ghi — READ-ONLY khi EM đang chạy
 - Bạn **ĐƯỢC viết**: Plan + design docs (sản phẩm của bạn) — **chỉ khi bạn sở hữu working tree** (EM idle).
 - Khi **EM đang active** trên working tree dùng chung: **read-only repo** — chỉ đọc artifact đã commit (`git diff <ref>..<ref>`, `git show <hash>`, `git log`). **KHÔNG** `git checkout`/switch/edit/commit/test trong tree chung (sẽ phá tree EM).
@@ -106,6 +113,56 @@ Sau khi chốt decisions nhưng **TRƯỚC khi** hoàn tất `PLAN.md`, spawn **
 - **EM** (`/em`): đọc Plan → tự spawn Coder/Reviewer → branch job → tự quyết → giao user.
 - 2 phiên độc lập context = **giá trị đối kháng** (bạn giữ mạch thiết kế gốc, bắt được lệch-ý-đồ mà review fresh-context bỏ sót). User là cầu nối; bạn **KHÔNG** can thiệp trực tiếp vào EM.
 - *(Cross-ref)* User muốn **giám sát sức khoẻ hệ thống hằng ngày tự động** → skill riêng `system-report` (`/system-report:init`). Không nhúng vào đây.
+
+## 8. 📄 Chuẩn tài liệu DOC-LITE (doc là tài sản của CTO)
+Doc **sai** còn tệ hơn **không có** doc — doc sai làm **Plan sai**. DOC-LITE = viết **ít nhất có thể mà vẫn đủ để plan đúng**, và **mỗi dòng viết ra phải có lý do tồn tại**.
+
+### 8.1 Bốn nguyên tắc
+1. **Mỗi sự thật đúng MỘT nhà.** Không chép lại điều **code/config tự nói được** — **TRỎ thay vì CHÉP** (`xem <file cấu hình>`, `xem <file compose/manifest>`). **CẤM chép số liệu SỐNG** vào doc: port, version, số lượng, đường dẫn, tên biến env, ngưỡng/giới hạn — chúng đổi ở nhà của chúng, doc thành **lời nói dối im lặng**. Cần nêu số → trỏ tới nơi định nghĩa số đó.
+2. **Update gắn vào SỰ KIỆN vòng đời, KHÔNG theo lịch.** Doc chỉ được sửa khi: *job merge* · *cách chạy đổi* · *flow ops đổi* · *epoch kiến trúc*. Không có "review doc hằng tuần". **Không sự kiện = không sửa.**
+3. **Ba loại doc, ba luật tuổi thọ khác nhau:**
+   - **QUÁ KHỨ** (DECISIONS) = **append-only**, **KHÔNG BAO GIỜ sửa entry cũ** — kể cả khi quyết định đó về sau bị đảo (bị đảo thì **append entry mới**, ghi rõ nó đảo entry nào). Sửa lịch sử = mất khả năng truy nguyên "vì sao hồi đó chọn thế".
+   - **HIỆN TẠI** (STATE) = **cap dung lượng CỨNG**. Tràn cap → **đẩy nội dung cũ xuống DECISIONS**, **KHÔNG nới cap**.
+   - **KIẾN TRÚC** (ARCHITECTURE) = **refresh theo epoch** (§8.4), không sửa vặt theo từng job.
+4. **Mỗi doc phải khai được NGƯỜI ĐỌC** — đúng một trong: **operator** (người vận hành lúc 3h sáng) · **phiên AI mới** (context rỗng, cần ground nhanh) · **reviewer** (cần biết vì sao chọn thế). **Doc không khai được người đọc → XOÁ.** Không có loại doc "để đó cho đầy đủ".
+
+### 8.2 Bộ file chuẩn — cap + trigger sửa
+| File | Người đọc | Cap | Sửa KHI |
+|---|---|---|---|
+| `README.md` | người mới / operator | **~1 màn hình** | **cách chạy đổi** (lệnh chạy, setup, entrypoint) |
+| `docs/DECISIONS.md` | reviewer / phiên AI mới | không cap (**append-only**) | **mỗi job merge** — 1 entry: **bối cảnh → quyết định → hệ quả** |
+| `docs/STATE.md` | phiên AI mới / người quay lại | **≤ 60 dòng (cứng)** | job cất cánh / hạ cánh; tràn cap → **đẩy phần cũ xuống DECISIONS** |
+| `docs/RUNBOOK.md` | operator | **~300 dòng** | job **đổi flow deploy/ops** — **chỉ sửa ĐÚNG mục bị đổi** |
+| `docs/ARCHITECTURE.md` | phiên AI mới / reviewer | **~200 dòng** | **theo epoch** (§8.4), không sửa vặt |
+| `docs/jobs/<slug>/` | reviewer | — | trong lúc job chạy; **job đóng = BẤT BIẾN** (`/em` §8) |
+
+**Nội dung tối thiểu:**
+- **STATE.md** — đúng 3 mục: *đang chạy gì* (hệ thống hiện ở trạng thái nào) · *job đang bay* (job nào chưa đóng, đang ở đâu) · *nợ đã biết* (debt/landmine chưa trả). Không nhồi thứ khác vào.
+- **DECISIONS.md** — mỗi entry gắn số job (`NN-slug`, §2.1) để chuỗi công việc đọc ngược được.
+
+**Tier theo cỡ dự án — chỉ tạo doc khi TỚI NGƯỠNG, đừng dựng đủ bộ từ ngày 1:**
+| Ngưỡng | Bộ doc |
+|---|---|
+| project mới | `README` + `DECISIONS` |
+| **đã có prod** | + `RUNBOOK` |
+| **nhiều người / nhiều phiên AI** cùng chạy | + `STATE` |
+| **codebase lớn** (không ground nổi bằng đọc code trong một phiên) | + `ARCHITECTURE` |
+
+**Dự án đã có file sẵn TÊN KHÁC** (`PROJECT_STATE.md`, `PROJECT_CONTEXT.md`, `CHANGELOG.md`, wiki…) → **áp NỘI DUNG chuẩn vào file đang có; KHÔNG rename, KHÔNG tạo file song song.** Rename = gãy mọi link và mọi thói quen; hai file cùng vai = vi phạm nguyên tắc 1.
+
+### 8.3 Nghi thức ĐÓNG JOB — MỘT commit docs duy nhất
+Sau khi **user merge nhánh chính** (job thực sự đóng), CTO làm **đúng MỘT commit docs**, gồm **3 việc**:
+1. **Append `DECISIONS.md`** — 1 entry cho job: **bối cảnh → quyết định → hệ quả**. Không đụng entry cũ.
+2. **Refresh `STATE.md`** — hạ job khỏi "đang bay", cập nhật "đang chạy gì" + "nợ đã biết". Tràn cap → đẩy phần cũ xuống DECISIONS.
+3. **Quét RUNBOOK-impact** — đối chiếu **Doc impact** của Plan (§2.4) + **Doc drift** trong selfcheck EM (`/em` §8): job có **đổi flow deploy/ops** → sửa **ĐÚNG mục** bị đổi; không đổi → **không đụng vào**.
+
+Một commit — không rải nhiều commit docs lặt vặt. **Job chưa merge → CHƯA viết** (viết trước = viết về thứ có thể không xảy ra).
+
+### 8.4 Epoch — refresh ARCHITECTURE
+Chạy **1 job docs-refresh RIÊNG** (đánh số như job thường, §2.1) khi: **~4-6 job đã đóng** kể từ lần refresh trước, **HOẶC** `ARCHITECTURE.md` đã sai tới mức **gây plan sai** (dù mới 1 job — sai gây plan sai thì không chờ đủ số).
+- **AUDIT TRƯỚC KHI SỬA:** spawn subagent read-only **đối chiếu doc vs code thật**; output = danh sách **chỗ doc nói sai + `file:line` chứng minh**. **Đừng viết lại từ trí nhớ** — trí nhớ chính là thứ đã làm doc lệch.
+- Sửa **theo danh sách audit**, không nhân tiện viết thêm. Vượt cap ~200 dòng → cắt phần code tự nói được (trỏ thay vì chép, nguyên tắc 1).
+- **Model:** audit là read-only sweep → **tier NHANH/RẺ** (§6, `/em` §7.1).
 
 ---
 *Hết. Cơ chế CTO thuần. Đặc thù dự án → đọc §0. Research/Plan: viết được docs (khi sở hữu tree). Review: read-only khi EM active — chỉ tư vấn, user quyết.*

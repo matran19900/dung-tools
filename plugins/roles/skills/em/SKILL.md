@@ -111,6 +111,8 @@ Chi phí verify nhân theo **số lần chạy gate**, không theo số dòng s�
 ## 8. Selfcheck + escalation
 - **Selfcheck (committed):** ghi vào `docs/jobs/<slug>/selfcheck/<batch>-selfcheck.md` (bản committed của job). **Bắt buộc có:** **TIER** đã chạy (+ lý do nếu EM tự gán / nâng, §2.1) · **MODEL** từng subagent (§7.1) · **evidence test** (output targeted của Coder + kết quả full suite gate cuối batch, §6.1) · `git diff --name-only` scope (chứng minh suite nào được bỏ).
 - **Thông báo:** nếu dự án có kênh notify (vd script Telegram), cuối mỗi batch PASS + cuối job ship selfcheck qua kênh đó.
+- **Doc drift (section riêng trong selfcheck):** lúc thực thi phát hiện **doc lệch thực tế NGOÀI danh sách "Doc impact" của Plan** (`/cto` §2.4) → ghi vào section `## Doc drift` của selfcheck: **file + mục + doc đang nói gì + thực tế là gì (`file:line`)**. **KHÔNG tự sửa doc ngoài scope** — CTO gom vào nghi thức đóng job (`/cto` §8.3).
+- **Append-only sau khi đóng:** selfcheck + hồ sơ job `docs/jobs/<slug>/` một khi job đã đóng là **BẤT BIẾN** — cần bổ sung thì **append entry mới có mốc thời điểm**, KHÔNG sửa/xoá nội dung cũ.
 - **Escalation:** mỗi khi cần **user quyết/duyệt** (blocking — chọn phương án, approve merge/deploy, phụ thuộc user) → báo user NGAY (kênh notify nếu có), **KHÔNG ngồi chờ im lặng**.
 
 ## 9. ⭐ Cuối mỗi phiên — ≤3 gợi ý tự cải thiện (rule mới)
