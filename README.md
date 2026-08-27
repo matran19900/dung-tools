@@ -13,6 +13,7 @@ dung-tools/                              ← marketplace repo (push this to GitH
     │   ├── .claude-plugin/plugin.json
     │   └── skills/
     │       ├── cto/SKILL.md             → invoked as /roles:cto
+    │       ├── cto/scripts/             ← session-cost.py (token spend report)
     │       └── em/SKILL.md              → invoked as /roles:em
     └── system-report/                   ← plugin "system-report"
         ├── .claude-plugin/plugin.json
@@ -24,7 +25,7 @@ dung-tools/                              ← marketplace repo (push this to GitH
 ```
 
 - **`/roles:cto`** — CTO advisor: research → self-sufficient Plan → independent review. Read-only while EM runs.
-- **`/roles:em`** — EM executor: receive Plan → Coder/Reviewer loop → branch-per-step → verify → merge.
+- **`/roles:em`** — EM executor: receive Plan → Coder/Reviewer loop → branch-per-batch (risk-tiered ritual) → verify → merge.
 - **`/system-report:init`** — scaffold automated daily health reporting into the current repo; then cron runs `ops/system-report/run.sh` every day: collect multi-instance logs → READ-ONLY AI triage (dead instances, regressions vs `KNOWN_ISSUES.md`, open items in `WATCHLIST.md`, code correlation) → severity-ranked digest to a webhook + a full dated file. `:run` for manual/debug, `:status` for readiness.
 - All are **project-agnostic**. Project specifics stay in each repo: roles read `docs/PROJECT_STATE.md` + `docs/workflow/PROJECT_CONTEXT.md`; system-report reads `ops/system-report/config.yml`.
 
@@ -78,7 +79,17 @@ With `autoUpdate: true`, each new session pulls the latest pushed skills automat
 
 ## Versioning
 
-- Bump `version` in `plugins/roles/.claude-plugin/plugin.json` on changes; users only update when it bumps (or via `autoUpdate`).
+- ⚠️ **`version` lives in TWO files — bump BOTH in the same commit:**
+  1. `plugins/<name>/.claude-plugin/plugin.json` — **wins at install time** (`calculatePluginVersion` precedence).
+  2. `.claude-plugin/marketplace.json` → `plugins[].version` — what the marketplace listing shows.
+
+  A stale entry in #2 is *silently ignored* at install, so nothing breaks loudly — it just misinforms
+  anyone browsing the marketplace, and hides which release is current. Don't rely on noticing it by eye:
+  ```bash
+  claude plugin validate .      # flags the exact mismatch + the value to use. Must be warning-free.
+  ```
+  Keep `description` in the two files in sync too — the marketplace one is what people read before installing.
+- Users only update when the version bumps (or via `autoUpdate`); the installed copy lives in `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`.
 - Pin a project to a specific state with `ref` (branch/tag) or `sha` (commit) in the project's `extraKnownMarketplaces.source`.
 
 ## Growth path

@@ -158,6 +158,12 @@ Sau khi **CEO merge nhánh chính** (job thực sự đóng), CTO làm **đúng 
 
 Một commit — không rải nhiều commit docs lặt vặt. **Job chưa merge → CHƯA viết** (viết trước = viết về thứ có thể không xảy ra).
 
+**Version khai ở NHIỀU nơi → bump ĐỒNG THỜI, trong CÙNG commit.** Nguyên tắc 1 (§8.1) đòi mỗi sự thật một nhà, nhưng `version` thường bị ép có **2+ nhà** (manifest của gói · file khai với marketplace/registry · badge trong README · hằng số trong code). Không gộp được thì **trước mỗi lần bump phải quét toàn repo**, đừng bump theo trí nhớ:
+```bash
+grep -rn '"version"' --include='*.json' .    # (thêm pattern cho ngôn ngữ/định dạng của dự án)
+```
+Bump lẻ một nơi = nơi kia thành **lời nói dối im lặng**. Kiểu lệch này nguy ở chỗ **không gãy to tiếng**: nơi bị bỏ sót thường bị bỏ qua âm thầm, nên mọi thứ *trông như* chạy đúng trong khi thông tin phát ra ngoài đã sai. Hệ sinh thái nào có **validator riêng** (lint manifest / `validate` của chính công cụ đó) thì **chạy nó và đòi sạch warning** — rẻ hơn và chắc hơn mọi lời dặn 'nhớ bump cả hai'.
+
 ### 8.4 Epoch — refresh ARCHITECTURE
 Chạy **1 job docs-refresh RIÊNG** (đánh số như job thường, §2.1) khi: **~4-6 job đã đóng** kể từ lần refresh trước, **HOẶC** `ARCHITECTURE.md` đã sai tới mức **gây plan sai** (dù mới 1 job — sai gây plan sai thì không chờ đủ số).
 - **AUDIT TRƯỚC KHI SỬA:** spawn subagent read-only **đối chiếu doc vs code thật**; output = danh sách **chỗ doc nói sai + `file:line` chứng minh**. **Đừng viết lại từ trí nhớ** — trí nhớ chính là thứ đã làm doc lệch.
