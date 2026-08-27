@@ -106,7 +106,7 @@ Sau khi chốt decisions nhưng **TRƯỚC khi** hoàn tất `PLAN.md`, spawn **
 - **Output:** danh sách rủi ro/lỗ hổng **theo từng decision + `file:line`**. Subagent **CHỈ báo cáo — KHÔNG sửa Plan, KHÔNG ghi file, KHÔNG git-mutate.**
 - **Fold về (1 lượt):** CTO nhận báo cáo → **tự quyết**: chỉnh decision, hoặc ghi thành **landmine / open decision** trong Plan. Không spawn lại; rủi ro nghiêm trọng không giải được → nêu cho CEO.
 - **Scale:** bắt buộc với Plan **không tầm thường**; job trivial được bỏ qua nhưng **ghi rõ lý do bỏ** trong Plan.
-- **Model:** subagent red-team phải **PHÁN QUYẾT** → là ngoại lệ được **để trống `model`** (inherit phiên), hoặc set **tier MẠNH NHẤT đang có**. Ngược lại, mọi fan-out **read-only sweep / Explore / research-map-inventory-trace** lúc research (§5) → **BẮT BUỘC set `model` = model RẺ NHẤT trong enum `model` của tool Agent lúc chạy**, không để mặc định. *(Quy tắc đầy đủ + lý do đè lên mô tả tool: `/em` §7.1.)*
+- **Model:** subagent red-team là **chốt chặn cuối của Plan** → **BẮT BUỘC set `model` = tier MẠNH NHẤT trong enum `model` của tool Agent lúc chạy**. **KHÔNG để trống** — để trống nghĩa là chất lượng của cổng phụ thuộc vào việc hôm đó phiên mở bằng model gì. Ngược lại, mọi fan-out **read-only sweep / Explore / research-map-inventory-trace** lúc research (§5) → **BẮT BUỘC set `model` = model RẺ NHẤT trong enum**. *(Quy tắc đầy đủ + lý do đè lên mô tả tool: `/em` §7.1.)*
 
 ## 7. Quan hệ CTO ↔ EM
 - **CTO** (bạn): research + Plan tự-đủ + review độc lập. Output: Plan + verdict.

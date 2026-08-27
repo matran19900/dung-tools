@@ -95,21 +95,21 @@ Chi phí verify nhân theo **số lần chạy gate**, không theo số dòng s�
 - **Reviewer (độc lập, đối kháng — chỉ T1/T2, §2.1):** subagent KHÁC Coder; đọc code thật + selfcheck + **evidence Coder đính kèm** + verify claim "pre-existing" → verdict + phản biện; **tự chạy lại test CHỈ khi nêu được nghi ngờ cụ thể** (§6.1); **KHÔNG sửa code, KHÔNG git-mutate** (xem §4).
 
 ### 7.1 Chọn MODEL cho subagent
+- **LUÔN set `model` khi spawn. KHÔNG BAO GIỜ để trống.** Giá trị kế thừa là **vô hình tại chỗ gọi**, nên nó **lặng lẽ đúng hoặc lặng lẽ sai tuỳ hôm đó phiên chạy model gì** — phiên EM mở bằng model rẻ + Reviewer T1 để trống = **âm thầm hạ cấp đúng chỗ cần mạnh nhất**, mà chỗ gọi không hề thấy.
 - **BẮT BUỘC set `model` khi spawn** cho: **Explore** · **read-only sweep** · **research/map/inventory/trace** · **việc thuần cơ học** (rename, fixture, format, đổi copy). Chọn **model RẺ NHẤT trong enum `model` của tool Agent lúc chạy**.
   ⚠️ Mô tả tool Agent khuyên *"default to omitting it"* — **quy tắc này ĐÈ lên nó**. Không có ngoại lệ, không "để mặc định cho chắc".
-- **CHỈ để trống `model`** khi subagent phán quyết ở **mức cao nhất**: **red-team** (`/cto` §6) · **Reviewer của batch T1** · **Coder của batch money-path**. Reviewer **T2** → theo bảng (**tier thường**), **KHÔNG để trống**.
 - **Override theo tier:**
 
   | Việc | Model |
   |---|---|
-  | **T1** — Coder + Reviewer | tier **MẠNH NHẤT** đang có |
+  | **T1** — Coder + Reviewer · **Coder của batch money-path** | tier **MẠNH NHẤT** trong enum |
   | **T2** — Coder | tier **mạnh** |
   | **T2** — Reviewer | tier **thường** |
   | **T3** · mọi subagent **read-only sweep / Explore** · việc **thuần cơ học** (rename, fixture, format, đổi copy) | tier **NHANH/RẺ** |
 
 - Viết và nghĩ theo **tier** ("mạnh nhất / thường / nhanh"), **KHÔNG ghim tên model cụ thể** vào quy trình — tên model đổi theo thời gian, tier thì không. Tra tier hiện có lúc chạy.
 - **Ghi model đã dùng cho TỪNG subagent vào selfcheck** (`Coder: <model> · Reviewer: <model>`) để CEO đo lại hiệu quả về sau.
-- Có **bất kỳ** subagent read-only / cơ học nào chạy **model mặc định** → **ghi là DEVIATION trong selfcheck**, kèm lý do.
+- Có **bất kỳ** subagent nào **spawn mà không set `model`** → **ghi là DEVIATION trong selfcheck**, kèm lý do.
 
 ## 8. Selfcheck + escalation
 - **Selfcheck (committed):** ghi vào `docs/jobs/<slug>/selfcheck/<batch>-selfcheck.md` (bản committed của job). **Bắt buộc có:** **TIER** đã chạy (+ lý do nếu EM tự gán / nâng, §2.1) · **MODEL** từng subagent (§7.1) · **evidence test** (output targeted của Coder + kết quả full suite gate cuối batch, §6.1) · `git diff --name-only` scope (chứng minh suite nào được bỏ).
