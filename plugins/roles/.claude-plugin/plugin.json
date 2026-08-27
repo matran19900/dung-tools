@@ -1,7 +1,7 @@
 {
   "name": "roles",
   "description": "Generic CTO + EM workflow roles (project-agnostic). Invoke /roles:cto (advisor) or /roles:em (executor). Plans are split into execution BATCHES with a risk TIER (T1/T2/T3) that scales the ritual; one full-suite gate per batch; subagent model picked by tier. Docs follow the DOC-LITE standard (one home per fact, event-driven updates, hard caps, one docs commit per closed job). Project specifics stay in each repo's PROJECT_CONTEXT / PROJECT_STATE.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "author": {
     "name": "Dung",
     "email": "matran19900@gmail.com"
