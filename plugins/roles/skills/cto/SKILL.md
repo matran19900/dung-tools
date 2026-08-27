@@ -36,7 +36,7 @@ Tên job = **`NN-<slug>`**: 2 chữ số + `-` + slug kebab-case ngắn, mô t�
 `01-auth-refactor`, `02-fix-race-checkout`, `03-add-audit-sink`… Số = **thứ tự đã làm** (lịch sử), KHÔNG phải độ ưu tiên.
 - **Trước khi đặt tên, PHẢI tra job mới nhất rồi +1** — đừng đoán từ trí nhớ:
   ```bash
-  ls docs | grep -E '^[0-9]{2,}-' | sort | tail -3      # 3 job gần nhất → lấy số lớn nhất
+  ls docs | grep -E '^[0-9]{2,}-' | sort -V | tail -3   # 3 job gần nhất → lấy số lớn nhất (sort -V: 100- > 99-)
   ```
   Không có job nào đánh số → job này là `01-`. Repo đã có job **chưa đánh số** → **để nguyên**, không đổi tên hồi tố; job mới bắt đầu từ `01-` (hoặc số CEO chốt).
 - **Không tái dùng số, không đổi số job cũ** kể cả khi job bị huỷ giữa chừng (số trống = bằng chứng có job bị bỏ, đó là thông tin). Quá 99 → chuyển 3 chữ số (`100-`), giữ nguyên job cũ.
@@ -182,7 +182,7 @@ Chạm **MỘT** trong các mốc sau: **job đóng** · **sự cố xử xong**
 CEO nói **"CTO tổng hợp token đã tiêu thụ trong N ngày"** → chạy:
 
 ```bash
-python3 $(ls ~/.claude/plugins/cache/dung-tools/roles/*/skills/cto/scripts/session-cost.py | tail -1) --days N
+python3 $(ls -t ~/.claude/plugins/cache/dung-tools/roles/*/skills/cto/scripts/session-cost.py | head -1) --days N
 ```
 
 - Không có "N ngày" → **bỏ `--days`** (toàn bộ lịch sử). Thêm **`--all`** để quét **mọi project** trên máy.

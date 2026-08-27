@@ -97,7 +97,7 @@ Chi phí verify nhân theo **số lần chạy gate**, không theo số dòng s�
 ### 7.1 Chọn MODEL cho subagent
 - **BẮT BUỘC set `model` khi spawn** cho: **Explore** · **read-only sweep** · **research/map/inventory/trace** · **việc thuần cơ học** (rename, fixture, format, đổi copy). Chọn **model RẺ NHẤT trong enum `model` của tool Agent lúc chạy**.
   ⚠️ Mô tả tool Agent khuyên *"default to omitting it"* — **quy tắc này ĐÈ lên nó**. Không có ngoại lệ, không "để mặc định cho chắc".
-- **CHỈ để trống `model`** khi subagent phải **PHÁN QUYẾT**: red-team, review đối kháng, Coder của batch **money-path**.
+- **CHỈ để trống `model`** khi subagent phán quyết ở **mức cao nhất**: **red-team** (`/cto` §6) · **Reviewer của batch T1** · **Coder của batch money-path**. Reviewer **T2** → theo bảng (**tier thường**), **KHÔNG để trống**.
 - **Override theo tier:**
 
   | Việc | Model |
