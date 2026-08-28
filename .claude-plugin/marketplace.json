@@ -10,7 +10,7 @@
       "name": "roles",
       "source": "./plugins/roles",
       "description": "Generic CTO (advisor: research → self-sufficient Plan → independent review) and EM (executor: Plan → Coder/Reviewer loop → branch-per-batch) role skills. Plans split into execution BATCHES carrying a risk TIER (T1/T2/T3) that scales the ritual; one full-suite gate per batch; every subagent spawns with an explicit model chosen by tier; docs follow the DOC-LITE standard. Project-agnostic; project specifics live in each repo's PROJECT_CONTEXT / PROJECT_STATE.",
-      "version": "0.1.6",
+      "version": "0.1.7",
       "keywords": ["workflow", "cto", "em", "roles", "review", "executor"]
     },
     {

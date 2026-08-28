@@ -3,7 +3,7 @@
 
 Chạy được ở bất kỳ project nào, không cần tham số: script tự suy ra thư mục
 transcript từ thư mục làm việc hiện tại (Claude Code mã hoá đường dẫn cwd
-thành tên thư mục trong ~/.claude/projects/ bằng cách đổi "/" và "_" thành "-").
+thành tên thư mục trong ~/.claude/projects/ bằng cách đổi "/", "\\", ":" và "_" thành "-").
 
     python3 session-cost.py              # project hiện tại, toàn bộ lịch sử
     python3 session-cost.py --days 7     # CHỈ tính các lượt trong 7 ngày gần nhất
@@ -48,20 +48,36 @@ def projects_root() -> Path:
 
 
 def encode_cwd(path: Path) -> str:
-    """Claude Code đổi "/" và "_" trong đường dẫn thành "-"."""
-    return str(path).replace("/", "-").replace("_", "-")
+    r"""Claude Code đổi "/", "\\", ":" và "_" trong đường dẫn thành "-".
+
+    Trên Windows PHẢI đổi cả "\\" và ":": nếu để nguyên, `root / "E:\Dev\x"`
+    bị pathlib coi là đường tuyệt đối có ổ đĩa nên **nuốt mất root** — hàm dưới
+    khi đó trỏ vào chính thư mục project (không có .jsonl) và báo "không có
+    transcript", thay vì đọc ~/.claude/projects/e--Dev-x.
+    """
+    return (str(path).replace("/", "-").replace("\\", "-")
+            .replace(":", "-").replace("_", "-"))
 
 
 def find_project_dir(cwd: Path) -> Path | None:
     root = projects_root()
     if not root.is_dir():
         return None
-    exact = root / encode_cwd(cwd)
-    if exact.is_dir():
-        return exact
+    enc = encode_cwd(cwd)
+    dirs = [d for d in root.iterdir() if d.is_dir()]
+    # Quét thư mục thay vì `(root / enc).is_dir()`: trên NTFS phép thử đó khớp
+    # bất kể hoa/thường và trả về Path mang tên ta tự dựng, nên dòng
+    # "=== ... → ... ===" in ra một tên KHÔNG tồn tại trên đĩa.
+    for d in dirs:                                   # khớp chính xác trước —
+        if d.name == enc:                            # POSIX (/home/x ≠ /Home/x)
+            return d                                 # nhờ vậy không bị nhận nhầm
+    low = enc.lower()                                # rồi mới bỏ qua hoa/thường:
+    for d in dirs:                                   # cwd "E:\..." → "E--Dev-x"
+        if d.name.lower() == low:                    # còn thư mục thật "e--Dev-x"
+            return d
     # dự phòng: khớp theo tên thư mục cuối, chọn cái nhiều dữ liệu nhất
     leaf = cwd.name.replace("_", "-")
-    cands = [d for d in root.iterdir() if d.is_dir() and leaf in d.name]
+    cands = [d for d in dirs if leaf in d.name]
     if not cands:
         return None
     return max(cands, key=lambda d: sum(f.stat().st_size for f in d.glob("*.jsonl")))
@@ -167,9 +183,15 @@ def scan_session(path: Path, since: str | None = None) -> dict:
                     agent_topics.add(str(inp.get("description", "")))
 
     mb = path.stat().st_size / 1048576
-    usd = (t_in * USD_PER_M_INPUT + t_cw * USD_PER_M_CACHE_WRITE
-           + t_cr * USD_PER_M_CACHE_READ + t_out * USD_PER_M_OUTPUT) / 1e6
-    avg_ctx = (t_in + t_cw + t_cr) / turns if turns else 0
+    # Tách chi phí phiên chính thành 2 khoản, KHÔNG đổi công thức:
+    # in_usd + out_usd == usd (bất biến, cột in$ + out$ phải bằng cột chính$).
+    in_tok = t_in + t_cw + t_cr        # gộp cả 3: gần như toàn bộ input đi qua cache,
+    out_tok = t_out                    # lấy riêng input_tokens thô sẽ ra ~0 và trông như bug
+    in_usd = (t_in * USD_PER_M_INPUT + t_cw * USD_PER_M_CACHE_WRITE
+              + t_cr * USD_PER_M_CACHE_READ) / 1e6
+    out_usd = t_out * USD_PER_M_OUTPUT / 1e6
+    usd = in_usd + out_usd
+    avg_ctx = in_tok / turns if turns else 0
 
     # Subagent của CHÍNH phiên này nằm ở <uuid>/subagents/. Context của chúng
     # nhỏ và riêng biệt nên chi phí gần TUYẾN TÍNH theo nội dung — khác hẳn
@@ -192,10 +214,20 @@ def scan_session(path: Path, since: str | None = None) -> dict:
         "id": path.stem[:8], "mb": mb, "turns": turns, "compacts": compacts,
         "agents": agents, "topics": len(agent_topics), "role": role,
         "usd": usd, "sub_usd": sub_usd, "sub_mb": sub_mb, "sub_n": len(sub_files),
+        "in_tok": in_tok, "out_tok": out_tok, "in_usd": in_usd, "out_usd": out_usd,
         "avg_ctx": avg_ctx, "ctx_first": ctx_first, "cr": t_cr, "out": t_out,
         "start": (first or "?")[:10], "end": (last or "?")[:10],
         "model": models.most_common(1)[0][0] if models else "-",
     }
+
+
+def tok(n: float) -> str:
+    """661_700_000 → '661.7M' · 2_000_000 → '2.0M' · 15_400 → '15k'."""
+    if n >= 1e6:
+        return f"{n / 1e6:.1f}M"
+    if n >= 1e3:
+        return f"{n / 1e3:.0f}k"
+    return str(int(n))
 
 
 def report(pdir: Path, top: int, since: str | None = None) -> float:
@@ -214,24 +246,69 @@ def report(pdir: Path, top: int, since: str | None = None) -> float:
     sub_total = sum(r["sub_usd"] for r in rows)
     sub_n = sum(r["sub_n"] for r in rows)
 
-    print(f"\n  {'phiên':10}{'vai':6}{'lượt':>7}{'nén':>5}{'ctxTB':>8}{'spawn':>7}"
-          f"{'chính$':>8}{'sub$':>7}{'TỔNG$':>8}{'%':>5}  khoảng ngày")
-    print("  " + "-" * 94)
-    for r in rows[:top]:
-        ag = f"{r['agents']}/{r['topics']}" if r["agents"] else "-"
-        pct = r["all_usd"] / total * 100 if total else 0
-        print(f"  {r['id']:10}{r['role']:6}{r['turns']:7d}{r['compacts']:5d}"
-              f"{r['avg_ctx'] / 1000:7.0f}k{ag:>7}{r['usd']:8.0f}{r['sub_usd']:7.0f}"
-              f"{r['all_usd']:8.0f}{pct:5.0f}%  {r['start']} → {r['end']}")
-    if len(rows) > top:
-        rest = sum(r["all_usd"] for r in rows[top:])
-        print(f"  {'… ' + str(len(rows) - top) + ' phiên còn lại':30}"
-              f"{'':31}{rest:8.0f}{rest / total * 100:5.0f}%")
+    # `%` và thứ tự sort vẫn dựa trên all_usd (chính$ + sub$) — cột TỔNG$ chỉ bị
+    # BỎ KHỎI BẢNG, không bỏ khỏi logic; đổi sang chính$ sẽ làm đổi thứ hạng phiên.
+    head = (f"  {'phiên':9}{'vai':5}{'lượt':>6}{'ctxTB':>8}{'spawn':>7}"
+            f"{'in-tok':>9}{'in$':>8}{'out-tok':>9}{'out$':>7}"
+            f"{'chính$':>9}{'sub$':>7}{'%':>6}  khoảng ngày")
+    rule = "  " + "-" * (len(head) + 21)
 
-    print("  " + "-" * 94)
-    print(f"  TỔNG: ${total:,.0f} / {len(rows)} phiên"
-          f"   ·   trong đó subagent ~${sub_total:,.0f} ({sub_n} lượt,"
-          f" {sub_total / total * 100 if total else 0:.0f}%)")
+    # $ hiển thị là số nguyên. Hai bất biến của bảng, cả hai đều về LÀM TRÒN:
+    #  (1) trong một hàng: in$ + out$ == chính$  → chốt chính$ và in$, DẪN XUẤT out$.
+    #  (2) cột dọc: row TỔNG == tổng các hàng ĐANG HIỂN THỊ → cộng số đã làm tròn,
+    #      không làm tròn lại tổng thật (lệch $1-2 trông như bug khi CEO cộng tay).
+    # Số thật vẫn được giữ nguyên cho %, thứ tự sort, cảnh báo ⚠ và tổng mọi project.
+    def money(r):
+        usd_d, in_d = round(r["usd"]), round(r["in_usd"])
+        return in_d, usd_d - in_d, usd_d, round(r["sub_usd"])
+
+    def line(idc, role, turns, ctx, ag, itk, in_d, otk, out_d, usd_d, sub_d, pct, span):
+        return (f"  {idc:9}{role:5}{turns:6d}{ctx / 1000:7.0f}k{ag:>7}"
+                f"{tok(itk):>9}{in_d:8d}{tok(otk):>9}{out_d:7d}"
+                f"{usd_d:9d}{sub_d:7d}{pct:5.0f}%  {span}")
+
+    acc = dict(turns=0, in_tok=0, out_tok=0, in_d=0, out_d=0, usd_d=0, sub_d=0,
+               agents=0, topics=0)
+
+    def take(r_turns, r_in_tok, r_out_tok, m, agents, topics):
+        acc["turns"] += r_turns; acc["in_tok"] += r_in_tok; acc["out_tok"] += r_out_tok
+        acc["in_d"] += m[0]; acc["out_d"] += m[1]; acc["usd_d"] += m[2]; acc["sub_d"] += m[3]
+        acc["agents"] += agents; acc["topics"] += topics
+
+    print()
+    print(head)
+    print(rule)
+    for r in rows[:top]:
+        m = money(r)
+        take(r["turns"], r["in_tok"], r["out_tok"], m, r["agents"], r["topics"])
+        print(line(r["id"], r["role"], r["turns"], r["avg_ctx"],
+                   f"{r['agents']}/{r['topics']}" if r["agents"] else "-",
+                   r["in_tok"], m[0], r["out_tok"], m[1], m[2], m[3],
+                   r["all_usd"] / total * 100 if total else 0,
+                   f"{r['start']} → {r['end']}"))
+    if len(rows) > top:
+        t = rows[top:]
+        agg = {k: sum(x[k] for x in t) for k in
+               ("turns", "in_tok", "out_tok", "usd", "in_usd", "sub_usd", "all_usd")}
+        m = money(agg)
+        take(agg["turns"], agg["in_tok"], agg["out_tok"], m,
+             sum(x["agents"] for x in t), sum(x["topics"] for x in t))
+        print(line(f"… {len(t)} ph.", "", agg["turns"],
+                   agg["in_tok"] / max(agg["turns"], 1),
+                   f"{sum(x['agents'] for x in t)}/{sum(x['topics'] for x in t)}",
+                   agg["in_tok"], m[0], agg["out_tok"], m[1], m[2], m[3],
+                   agg["all_usd"] / total * 100 if total else 0,
+                   "(các phiên còn lại)"))
+
+    # Row TỔNG: mọi cột CỘNG DỒN — RIÊNG ctxTB là trung bình có TRỌNG SỐ
+    # (tổng in-tok / tổng lượt), KHÔNG phải cộng ctxTB của từng phiên.
+    print(rule)
+    print(line("TỔNG", "", acc["turns"], acc["in_tok"] / max(acc["turns"], 1),
+               f"{acc['agents']}/{acc['topics']}" if acc["agents"] else "-",
+               acc["in_tok"], acc["in_d"], acc["out_tok"], acc["out_d"],
+               acc["usd_d"], acc["sub_d"], 100.0,
+               f"{min(r['start'] for r in rows)} → {max(r['end'] for r in rows)}"
+               f"  ({len(rows)} phiên, {sub_n} subagent)"))
 
     # cảnh báo: phiên nào đang phình
     flags = [r for r in rows if r["compacts"] >= 2 or r["start"] != r["end"]]
