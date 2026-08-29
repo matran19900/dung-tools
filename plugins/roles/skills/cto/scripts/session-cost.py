@@ -34,11 +34,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# ---- ĐƠN GIÁ (thứ duy nhất là giả định) — USD / triệu token, mức opus ----
-USD_PER_M_INPUT = 15.00
-USD_PER_M_CACHE_WRITE = 18.75
-USD_PER_M_CACHE_READ = 1.50
-USD_PER_M_OUTPUT = 75.00
+# ---- ĐƠN GIÁ (thứ duy nhất là giả định) — USD / triệu token, mức Claude Opus 5 ----
+# Ghi cache lấy giá TTL 1h = 2x input (phiên Claude Code dùng TTL 1h). Nếu một phần
+# ghi thực tế ở TTL 5m (1.25x) thì phần đó bị tính dôi lên. Đọc cache = 0.1x input.
+USD_PER_M_INPUT = 5.00
+USD_PER_M_CACHE_WRITE = 10.00
+USD_PER_M_CACHE_READ = 0.50
+USD_PER_M_OUTPUT = 25.00
 CODE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".sh", ".go", ".rs",
             ".java", ".rb", ".c", ".cpp", ".h", ".sql", ".ps1"}
 
@@ -368,8 +370,11 @@ def main() -> int:
     print(f"=== {cwd}  →  {pdir.name} ===")
     report(pdir, args.top, since)
     print("\n  Token là SỐ THẬT (đọc message.usage của từng lượt). Chỉ đơn giá là giả định:")
-    print(f"  ${USD_PER_M_INPUT:.0f}/M input · ${USD_PER_M_CACHE_WRITE}/M ghi cache ·"
-          f" ${USD_PER_M_CACHE_READ}/M đọc cache · ${USD_PER_M_OUTPUT:.0f}/M output.")
+    print(f"  ${USD_PER_M_INPUT:.0f}/M input · ${USD_PER_M_CACHE_WRITE:.0f}/M ghi cache ·"
+          f" ${USD_PER_M_CACHE_READ}/M đọc cache · ${USD_PER_M_OUTPUT:.0f}/M output"
+          f" (mức Claude Opus 5).")
+    print("  Giả định: MỌI ghi cache tính giá TTL 1h (2x input); phần nào thực tế là"
+          " TTL 5m (1.25x) sẽ bị tính dôi lên.")
     return 0
 
 
